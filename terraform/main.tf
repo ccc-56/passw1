@@ -1,0 +1,83 @@
+locals {
+  # Xray wants raw 32-byte X25519 keys in base64url without padding.
+  reality_private_key = trimsuffix(replace(replace(random_bytes.reality_key.base64, "+", "-"), "/", "_"), "=")
+
+  # Any 32 random bytes are a valid X25519 scalar, so the keypair can live in
+  # Terraform state instead of being regenerated on every rebuild. The matching
+  # public key is derived from it by scripts/links.sh, which keeps client share
+  # links stable across destroy/apply cycles.
+  user_data = templatefile("${path.module}/templates/user-data.sh.tftpl", {
+    uuid                = random_uuid.user.result
+    reality_private_key = local.reality_private_key
+    reality_short_id    = random_bytes.short_id.hex
+    reality_dest        = var.reality_dest
+    reality_server_name = var.reality_server_names[0]
+    server_names        = var.reality_server_names
+    proxy_port          = var.proxy_port
+  })
+}
+
+resource "random_bytes" "reality_key" {
+  length = 32
+}
+
+resource "random_bytes" "short_id" {
+  length = 4
+}
+
+resource "random_uuid" "user" {}
+
+resource "aws_lightsail_key_pair" "node" {
+  name = "${var.name}-key"
+  tags = var.tags
+}
+
+resource "aws_lightsail_static_ip" "node" {
+  name = "${var.name}-ip"
+}
+
+resource "aws_lightsail_instance" "node" {
+  name              = var.name
+  availability_zone = var.availability_zone
+  blueprint_id      = var.blueprint_id
+  bundle_id         = var.bundle_id
+  key_pair_name     = aws_lightsail_key_pair.node.name
+  user_data         = local.user_data
+  ip_address_type   = "dualstack"
+  tags              = var.tags
+}
+
+resource "aws_lightsail_static_ip_attachment" "node" {
+  static_ip_name = aws_lightsail_static_ip.node.name
+  instance_name  = aws_lightsail_instance.node.name
+
+  # Both this attachment and the firewall below only reference the instance
+  # *name*, which is stable, so replacing the instance (any user_data change
+  # does that) would otherwise leave the new one detached from the static IP
+  # and running Lightsail's default 22+80 firewall.
+  lifecycle {
+    replace_triggered_by = [aws_lightsail_instance.node]
+  }
+}
+
+resource "aws_lightsail_instance_public_ports" "node" {
+  instance_name = aws_lightsail_instance.node.name
+
+  port_info {
+    protocol  = "tcp"
+    from_port = 22
+    to_port   = 22
+    cidrs     = var.ssh_allowed_cidrs
+  }
+
+  port_info {
+    protocol  = "tcp"
+    from_port = var.proxy_port
+    to_port   = var.proxy_port
+    cidrs     = ["0.0.0.0/0"]
+  }
+
+  lifecycle {
+    replace_triggered_by = [aws_lightsail_instance.node]
+  }
+}
