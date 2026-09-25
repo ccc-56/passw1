@@ -56,3 +56,7 @@ output "ssh_private_key" {
   value       = aws_lightsail_key_pair.node.private_key
   sensitive   = true
 }
+
+output "ssh_user" {
+  value = "ubuntu"
+}

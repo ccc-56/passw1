@@ -10,6 +10,12 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require terraform aws
 
+if [ "$NODE_KIND" = byo ]; then
+  echo "NODE=$NODE is a bring-your-own host: nothing here is billed by AWS." >&2
+  echo "Cancel the VPS with its provider; the credentials stay in s3://$(state_bucket)/passw1/$NODE.tfstate." >&2
+  exit 1
+fi
+
 BILLED_RESOURCES=(
   aws_lightsail_instance_public_ports.node
   aws_lightsail_static_ip_attachment.node

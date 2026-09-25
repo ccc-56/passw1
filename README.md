@@ -14,6 +14,8 @@ One checkout manages several independent nodes, selected with `NODE`:
 | `singapore` | `ap-southeast-1` | `passw1-singapore` | `passw1/singapore.tfstate` |
 | `seoul` / `osaka` | `ap-northeast-2` / `-3` | `passw1-<node>` | `passw1/<node>.tfstate` |
 | anything else | `AWS_REGION` (required) | `passw1-<node>` | `passw1/<node>.tfstate` |
+| `dmit-hk` | — (existing VPS, `179.255.103.135`) | — | `passw1/dmit-hk.tfstate` |
+| anything else + `BYO_HOST_IP` | — (existing VPS) | — | `passw1/<node>.tfstate` |
 
 Every node has its own UUID, REALITY keypair, Hysteria2 password/certificate, SSH key and `clients/<node>/`
 directory; running a script for one node never touches another.
@@ -54,7 +56,7 @@ self-signed (no domain), so clients pin its SHA-256 (`pinSHA256` in the link).
 
 ## Usage
 
-Prerequisites: `terraform`, `aws` CLI with credentials, `openssl`, `curl`,
+Prerequisites: `terraform`, `aws` CLI with credentials (also for BYO hosts: the state bucket lives in S3), `openssl`, `curl`,
 `unzip`, `jq`, `basenc` (coreutils). Optional: `qrencode` for a scannable QR code.
 
 ```bash
@@ -69,6 +71,32 @@ NODE=singapore ./scripts/up.sh      # same lifecycle for the Singapore node
 NODE=singapore ./scripts/verify.sh
 NODE=singapore ./scripts/down.sh
 ```
+
+### Bring-your-own host (DMIT, BandwagonHost, ...)
+
+A VPS bought elsewhere (typically for a China-optimised route such as CN2 GIA)
+can run the exact same Xray + Hysteria2 setup. `terraform-byo/` is a second
+root module that generates the same credentials into the same S3 state bucket,
+but instead of creating a Lightsail instance it uploads the rendered
+`terraform/templates/user-data.sh.tftpl` over SSH and runs it (`terraform_data`
++ `remote-exec`; re-run whenever the template or the IP changes). Debian 12/13
+and Ubuntu 22.04+ are fine. The host must allow key-based login as `root`
+(or a passwordless-sudo user via `BYO_SSH_USER`) with 443/tcp+udp open.
+
+```bash
+mkdir -p clients/dmit-hk && cp ~/Downloads/id_rsa.pem clients/dmit-hk/node-key.pem && chmod 600 clients/dmit-hk/node-key.pem
+NODE=dmit-hk ./scripts/up.sh          # provision over SSH, print links
+NODE=dmit-hk ./scripts/verify.sh
+NODE=dmit-hk ./scripts/ssh.sh
+
+# any other VPS:
+NODE=lax BYO_HOST_IP=203.0.113.7 BYO_SSH_KEY=~/.ssh/lax ./scripts/up.sh
+```
+
+The key is read at apply time only (`BYO_SSH_KEY`, default
+`clients/<node>/node-key.pem`); `down.sh` and `rotate-ip.sh` refuse BYO nodes
+since nothing is billed or allocated through AWS — cancel or re-IP the VPS with
+its provider and rerun `up.sh`.
 
 `clients/<node>/` (git-ignored) gets `share-links.txt` (vless + hysteria2), an
 xray-core client config, a hysteria client config and the SSH private key.
