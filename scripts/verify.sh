@@ -1,25 +1,31 @@
 #!/usr/bin/env bash
-# End-to-end check: runs a throwaway xray client against the node and confirms
-# traffic actually exits through it (curl's observed IP == node IP).
+# End-to-end check: runs throwaway xray and hysteria clients against the node
+# and confirms traffic actually exits through it (curl's observed IP == node IP)
+# over both VLESS-REALITY (tcp) and Hysteria2 (udp).
 set -euo pipefail
 # shellcheck source=scripts/common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
-require terraform aws curl unzip openssl basenc
+require terraform aws curl unzip openssl basenc jq
 
 SOCKS_PORT="${SOCKS_PORT:-10808}"
-export SOCKS_PORT
+HY_SOCKS_PORT="${HY_SOCKS_PORT:-10809}"
+export SOCKS_PORT HY_SOCKS_PORT
 "$REPO_ROOT/scripts/links.sh" >/dev/null
 
 BIN_DIR="$REPO_ROOT/.local"
+mkdir -p "$BIN_DIR"
+
+# Resolves the redirect of /releases/latest instead of calling the GitHub API,
+# which rate-limits unauthenticated clients to 60 requests/hour.
+latest_tag() {
+  local url
+  url="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$1/releases/latest")"
+  printf '%s\n' "${url#*/releases/tag/}"
+}
+
 XRAY="$BIN_DIR/xray"
 if [ ! -x "$XRAY" ]; then
-  mkdir -p "$BIN_DIR"
-  if [ -z "${XRAY_VERSION:-}" ]; then
-    # Parse in two steps: piping curl into grep -m1 makes curl die on SIGPIPE.
-    release_json="$(curl -fsSL https://api.github.com/repos/XTLS/Xray-core/releases/latest)"
-    XRAY_VERSION="$(printf '%s' "$release_json" | grep '"tag_name"' | head -1 | cut -d'"' -f4)"
-  fi
-  version="$XRAY_VERSION"
+  version="${XRAY_VERSION:-$(latest_tag XTLS/Xray-core)}"
   echo "downloading xray-core $version"
   curl -fsSL -o "$BIN_DIR/xray.zip" \
     "https://github.com/XTLS/Xray-core/releases/download/$version/Xray-linux-64.zip"
@@ -27,25 +33,46 @@ if [ ! -x "$XRAY" ]; then
   chmod +x "$XRAY"
 fi
 
-"$XRAY" run -c "$REPO_ROOT/clients/xray-client.json" >"$BIN_DIR/xray-client.log" 2>&1 &
-client_pid=$!
-trap 'kill $client_pid 2>/dev/null || true' EXIT
+HYSTERIA="$BIN_DIR/hysteria"
+if [ ! -x "$HYSTERIA" ]; then
+  # Hysteria tags look like app/v2.12.2; the slash is %2F in download URLs.
+  version="${HYSTERIA_VERSION:-$(latest_tag HyNetworks/hysteria)}"
+  echo "downloading hysteria $version"
+  curl -fsSL -o "$HYSTERIA" \
+    "https://github.com/HyNetworks/hysteria/releases/download/${version//\//%2F}/hysteria-linux-amd64"
+  chmod +x "$HYSTERIA"
+fi
+
+"$XRAY" run -c "$CLIENTS_DIR/xray-client.json" >"$BIN_DIR/xray-client.log" 2>&1 &
+xray_pid=$!
+"$HYSTERIA" client -c "$CLIENTS_DIR/hysteria-client.yaml" >"$BIN_DIR/hysteria-client.log" 2>&1 &
+hy_pid=$!
+trap 'kill $xray_pid $hy_pid 2>/dev/null || true' EXIT
 sleep 3
 
 node_ip="$(tf_out public_ip)"
-seen_ip="$(curl -fsS --max-time 25 --socks5-hostname "127.0.0.1:$SOCKS_PORT" https://api.ipify.org)"
+echo "node   : $NODE"
 echo "node ip: $node_ip"
-echo "exit ip: $seen_ip"
-[ "$node_ip" = "$seen_ip" ] || {
-  echo "FAIL: traffic is not exiting through the node" >&2
-  tail -20 "$BIN_DIR/xray-client.log" >&2
-  exit 1
+
+check_exit() {
+  local label="$1" port="$2" log="$3" seen_ip
+  seen_ip="$(curl -fsS --max-time 25 --socks5-hostname "127.0.0.1:$port" https://api.ipify.org || true)"
+  echo "$label exit ip: ${seen_ip:-<none>}"
+  [ "$node_ip" = "$seen_ip" ] || {
+    echo "FAIL: $label traffic is not exiting through the node" >&2
+    tail -20 "$log" >&2
+    return 1
+  }
+  for url in https://www.google.com/generate_204 https://www.youtube.com https://x.com; do
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
+      --socks5-hostname "127.0.0.1:$port" "$url")"
+    echo "  $url -> HTTP $code"
+  done
 }
 
-for url in https://www.google.com/generate_204 https://www.youtube.com https://x.com; do
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 25 \
-    --socks5-hostname "127.0.0.1:$SOCKS_PORT" "$url")"
-  echo "$url -> HTTP $code"
-done
+status=0
+check_exit "vless-reality" "$SOCKS_PORT" "$BIN_DIR/xray-client.log" || status=1
+check_exit "hysteria2" "$HY_SOCKS_PORT" "$BIN_DIR/hysteria-client.log" || status=1
 
-echo "OK: proxy works"
+[ "$status" -eq 0 ] && echo "OK: both inbounds work"
+exit "$status"

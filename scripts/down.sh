@@ -10,6 +10,12 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require terraform aws
 
+if [ "$NODE_KIND" = byo ]; then
+  echo "NODE=$NODE is a bring-your-own host: nothing here is billed by AWS." >&2
+  echo "Cancel the VPS with its provider; the credentials stay in s3://$(state_bucket)/passw1/$NODE.tfstate." >&2
+  exit 1
+fi
+
 BILLED_RESOURCES=(
   aws_lightsail_instance_public_ports.node
   aws_lightsail_static_ip_attachment.node
@@ -22,5 +28,5 @@ tf_init
 terraform -chdir="$TF_DIR" destroy -input=false -auto-approve \
   "${BILLED_RESOURCES[@]/#/-target=}" "$@"
 
-rm -f "$REPO_ROOT/clients/share-link.txt" "$REPO_ROOT/clients/xray-client.json"
-echo "node destroyed; UUID and REALITY keys kept in s3://$(state_bucket)"
+rm -f "$CLIENTS_DIR/share-link.txt" "$CLIENTS_DIR/xray-client.json"
+echo "node $NODE destroyed; UUID and REALITY keys kept in s3://$(state_bucket)/passw1/$NODE.tfstate"

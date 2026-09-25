@@ -8,6 +8,24 @@ output "uuid" {
   value       = random_uuid.user.result
 }
 
+output "hysteria_user" {
+  value = var.hysteria_user
+}
+
+output "hysteria_password" {
+  value     = random_password.hysteria.result
+  sensitive = true
+}
+
+output "hysteria_cert_pem" {
+  description = "Self-signed certificate Hysteria2 serves; clients pin its SHA-256."
+  value       = tls_self_signed_cert.hysteria.cert_pem
+}
+
+output "hysteria_port" {
+  value = var.hysteria_port
+}
+
 output "reality_private_key" {
   description = "REALITY X25519 private key (base64url, no padding)."
   value       = local.reality_private_key
@@ -37,4 +55,8 @@ output "ssh_private_key" {
   description = "Private key for ubuntu@public_ip."
   value       = aws_lightsail_key_pair.node.private_key
   sensitive   = true
+}
+
+output "ssh_user" {
+  value = "ubuntu"
 }
