@@ -9,6 +9,7 @@ One checkout manages several independent nodes, selected with `NODE`:
 | `NODE` | region | Lightsail name | state key |
 | --- | --- | --- | --- |
 | `tokyo` (default) | `ap-northeast-1` | `passw1` | `passw1/tokyo.tfstate` |
+| `tokyo2` | `ap-northeast-1` | `passw1-tokyo2` | `passw1/tokyo2.tfstate` |
 | `singapore` | `ap-southeast-1` | `passw1-singapore` | `passw1/singapore.tfstate` |
 | `seoul` / `osaka` | `ap-northeast-2` / `-3` | `passw1-<node>` | `passw1/<node>.tfstate` |
 | anything else | `AWS_REGION` (required) | `passw1-<node>` | `passw1/<node>.tfstate` |

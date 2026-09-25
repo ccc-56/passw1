@@ -10,7 +10,7 @@ TF_DIR="$REPO_ROOT/terraform"
 # nodes never share credentials or step on each other's state.
 NODE="${NODE:-tokyo}"
 case "$NODE" in
-  tokyo) default_region=ap-northeast-1 ;;
+  tokyo | tokyo2) default_region=ap-northeast-1 ;;
   singapore) default_region=ap-southeast-1 ;;
   seoul) default_region=ap-northeast-2 ;;
   osaka) default_region=ap-northeast-3 ;;
