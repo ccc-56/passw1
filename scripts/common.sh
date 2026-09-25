@@ -4,7 +4,36 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TF_DIR="$REPO_ROOT/terraform"
-REGION="${AWS_REGION:-ap-northeast-1}"
+
+# One checkout can drive several independent nodes. NODE picks the region, the
+# Lightsail resource names, the state key and the clients/<node>/ directory, so
+# nodes never share credentials or step on each other's state.
+NODE="${NODE:-tokyo}"
+case "$NODE" in
+  tokyo) default_region=ap-northeast-1 ;;
+  singapore) default_region=ap-southeast-1 ;;
+  seoul) default_region=ap-northeast-2 ;;
+  osaka) default_region=ap-northeast-3 ;;
+  *) default_region="" ;;
+esac
+REGION="${AWS_REGION:-$default_region}"
+[ -n "$REGION" ] || {
+  echo "unknown NODE=$NODE: set AWS_REGION explicitly" >&2
+  exit 1
+}
+# The state bucket lives in one region regardless of where the node runs.
+STATE_REGION="${TF_STATE_REGION:-ap-northeast-1}"
+# shellcheck disable=SC2034  # used by the sourcing scripts
+CLIENTS_DIR="$REPO_ROOT/clients/$NODE"
+
+export TF_VAR_region="$REGION"
+export TF_VAR_availability_zone="${TF_VAR_availability_zone:-${REGION}a}"
+# The original Tokyo node predates NODE and keeps its unsuffixed names.
+if [ "$NODE" = tokyo ]; then
+  export TF_VAR_name="${TF_VAR_name:-passw1}"
+else
+  export TF_VAR_name="${TF_VAR_name:-passw1-$NODE}"
+fi
 
 require() {
   for bin in "$@"; do
@@ -33,8 +62,8 @@ ensure_state_bucket() {
   echo "creating state bucket s3://$bucket"
   aws s3api create-bucket \
     --bucket "$bucket" \
-    --region "$REGION" \
-    --create-bucket-configuration "LocationConstraint=$REGION" >/dev/null
+    --region "$STATE_REGION" \
+    --create-bucket-configuration "LocationConstraint=$STATE_REGION" >/dev/null
   aws s3api put-bucket-versioning --bucket "$bucket" \
     --versioning-configuration Status=Enabled
   aws s3api put-bucket-encryption --bucket "$bucket" \
@@ -50,7 +79,8 @@ tf_init() {
   bucket="$(state_bucket)"
   ensure_state_bucket "$bucket"
   terraform -chdir="$TF_DIR" init -reconfigure -input=false \
-    -backend-config="bucket=$bucket" -backend-config="region=$REGION" >/dev/null
+    -backend-config="bucket=$bucket" -backend-config="region=$STATE_REGION" \
+    -backend-config="key=passw1/$NODE.tfstate" >/dev/null
 }
 
 tf_out() {

@@ -14,11 +14,11 @@ PORT="$(tf_out proxy_port)"
 SNI="$(tf_out reality_server_name)"
 SID="$(tf_out reality_short_id)"
 PBK="$(x25519_public "$(tf_out reality_private_key)")"
-TAG="${LINK_TAG:-passw1-tokyo}"
+TAG="${LINK_TAG:-passw1-$NODE}"
 
 LINK="vless://$UUID@$IP:$PORT?encryption=none&security=reality&sni=$SNI&fp=chrome&pbk=$PBK&sid=$SID&type=tcp&flow=xtls-rprx-vision#$TAG"
 
-OUT="$REPO_ROOT/clients"
+OUT="$CLIENTS_DIR"
 mkdir -p "$OUT"
 printf '%s\n' "$LINK" >"$OUT/share-link.txt"
 chmod 600 "$OUT/share-link.txt"
@@ -69,10 +69,10 @@ JSON
 chmod 600 "$OUT/xray-client.json"
 
 echo
-echo "node        : $IP:$PORT (REALITY sni=$SNI)"
+echo "node        : $NODE $IP:$PORT (REALITY sni=$SNI)"
 echo "share link  : $LINK"
 echo
-echo "wrote clients/share-link.txt and clients/xray-client.json (git-ignored)"
+echo "wrote clients/$NODE/share-link.txt and clients/$NODE/xray-client.json (git-ignored)"
 if command -v qrencode >/dev/null; then
   qrencode -t ANSIUTF8 "$LINK"
 fi

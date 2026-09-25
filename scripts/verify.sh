@@ -27,7 +27,7 @@ if [ ! -x "$XRAY" ]; then
   chmod +x "$XRAY"
 fi
 
-"$XRAY" run -c "$REPO_ROOT/clients/xray-client.json" >"$BIN_DIR/xray-client.log" 2>&1 &
+"$XRAY" run -c "$CLIENTS_DIR/xray-client.json" >"$BIN_DIR/xray-client.log" 2>&1 &
 client_pid=$!
 trap 'kill $client_pid 2>/dev/null || true' EXIT
 sleep 3

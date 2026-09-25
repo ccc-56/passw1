@@ -1,8 +1,20 @@
 # passw1
 
-Cheap, disposable outbound proxy node on AWS Lightsail in Tokyo (`ap-northeast-1`),
-running Xray-core with **VLESS + REALITY**. Built to be created and destroyed on
-demand: `scripts/up.sh` to bring it online, `scripts/down.sh` to stop paying.
+Cheap, disposable outbound proxy nodes on AWS Lightsail, running Xray-core with
+**VLESS + REALITY**. Built to be created and destroyed on demand:
+`scripts/up.sh` to bring a node online, `scripts/down.sh` to stop paying.
+
+One checkout manages several independent nodes, selected with `NODE`:
+
+| `NODE` | region | Lightsail name | state key |
+| --- | --- | --- | --- |
+| `tokyo` (default) | `ap-northeast-1` | `passw1` | `passw1/tokyo.tfstate` |
+| `singapore` | `ap-southeast-1` | `passw1-singapore` | `passw1/singapore.tfstate` |
+| `seoul` / `osaka` | `ap-northeast-2` / `-3` | `passw1-<node>` | `passw1/<node>.tfstate` |
+| anything else | `AWS_REGION` (required) | `passw1-<node>` | `passw1/<node>.tfstate` |
+
+Every node has its own UUID, REALITY keypair, SSH key and `clients/<node>/`
+directory; running a script for one node never touches another.
 
 ## Cost
 
@@ -33,22 +45,27 @@ Prerequisites: `terraform`, `aws` CLI with credentials, `openssl`, `curl`,
 `unzip`, `basenc` (coreutils). Optional: `qrencode` for a scannable QR code.
 
 ```bash
-./scripts/up.sh        # create/update the node, print the vless:// share link
+./scripts/up.sh        # create/update the Tokyo node, print the vless:// share link
 ./scripts/verify.sh    # prove traffic really exits through the node
-./scripts/links.sh     # reprint the share link and rewrite clients/
+./scripts/links.sh     # reprint the share link and rewrite clients/<node>/
 ./scripts/rotate-ip.sh # new IPv4 if the current one gets blocked
 ./scripts/ssh.sh       # shell on the node (e.g. journalctl -u xray)
 ./scripts/down.sh      # destroy the node, bill back to zero
+
+NODE=singapore ./scripts/up.sh      # same lifecycle for the Singapore node
+NODE=singapore ./scripts/verify.sh
+NODE=singapore ./scripts/down.sh
 ```
 
-`clients/` (git-ignored) gets `share-link.txt`, an xray-core client config and
-the SSH private key. Import the share link into v2rayN / Nekoray / sing-box /
+`clients/<node>/` (git-ignored) gets `share-link.txt`, an xray-core client
+config and the SSH private key. Import the share link into v2rayN / Nekoray / sing-box /
 Shadowrocket / Clash.Meta directly.
 
 ### State and stable credentials
 
 Terraform state lives in `s3://passw1-tfstate-<account-id>` (created
-automatically, override with `TF_STATE_BUCKET`). `down.sh` deletes only the
+automatically in `ap-northeast-1`, override with `TF_STATE_BUCKET` /
+`TF_STATE_REGION`), one object per node: `passw1/<node>.tfstate`. `down.sh` deletes only the
 billed AWS resources and leaves the UUID and REALITY keypair in state, so the
 next `up.sh` — even from a different machine — issues the *same* credentials and
 your previously imported client entry keeps working after a one-line IP edit

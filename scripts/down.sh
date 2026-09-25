@@ -22,5 +22,5 @@ tf_init
 terraform -chdir="$TF_DIR" destroy -input=false -auto-approve \
   "${BILLED_RESOURCES[@]/#/-target=}" "$@"
 
-rm -f "$REPO_ROOT/clients/share-link.txt" "$REPO_ROOT/clients/xray-client.json"
-echo "node destroyed; UUID and REALITY keys kept in s3://$(state_bucket)"
+rm -f "$CLIENTS_DIR/share-link.txt" "$CLIENTS_DIR/xray-client.json"
+echo "node $NODE destroyed; UUID and REALITY keys kept in s3://$(state_bucket)/passw1/$NODE.tfstate"

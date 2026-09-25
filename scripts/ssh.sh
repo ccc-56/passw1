@@ -7,7 +7,7 @@ require terraform aws ssh
 
 tf_init
 
-KEY="$REPO_ROOT/clients/node-key.pem"
+KEY="$CLIENTS_DIR/node-key.pem"
 mkdir -p "$(dirname "$KEY")"
 tf_out ssh_private_key >"$KEY"
 chmod 600 "$KEY"
