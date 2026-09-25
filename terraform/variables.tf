@@ -44,11 +44,27 @@ variable "proxy_port" {
   default     = 443
 }
 
+variable "hysteria_port" {
+  description = <<-EOT
+    Public UDP port the Hysteria2 inbound listens on. Using 443/udp makes the
+    traffic look like HTTP/3 to the same site REALITY impersonates on 443/tcp.
+  EOT
+  type        = number
+  default     = 443
+}
+
+variable "hysteria_user" {
+  description = "Hysteria2 username; the password is generated and kept in state."
+  type        = string
+  default     = "passw1"
+}
+
 variable "reality_dest" {
   description = <<-EOT
     Host:port REALITY forwards non-proxy traffic to, i.e. the site the node
     impersonates. Must be reachable from Tokyo, speak TLS 1.3 + h2, and not be
-    a CDN edge that is already blocked in China.
+    a CDN edge that is already blocked in China. Hysteria2 masquerades as the
+    same site over HTTP/3.
   EOT
   type        = string
   default     = "www.lovelive-anime.jp:443"

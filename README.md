@@ -1,7 +1,8 @@
 # passw1
 
 Cheap, disposable outbound proxy nodes on AWS Lightsail, running Xray-core with
-**VLESS + REALITY**. Built to be created and destroyed on demand:
+**VLESS + REALITY** (443/tcp) and **Hysteria2** (443/udp) side by side. Built to
+be created and destroyed on demand:
 `scripts/up.sh` to bring a node online, `scripts/down.sh` to stop paying.
 
 One checkout manages several independent nodes, selected with `NODE`:
@@ -14,7 +15,7 @@ One checkout manages several independent nodes, selected with `NODE`:
 | `seoul` / `osaka` | `ap-northeast-2` / `-3` | `passw1-<node>` | `passw1/<node>.tfstate` |
 | anything else | `AWS_REGION` (required) | `passw1-<node>` | `passw1/<node>.tfstate` |
 
-Every node has its own UUID, REALITY keypair, SSH key and `clients/<node>/`
+Every node has its own UUID, REALITY keypair, Hysteria2 password/certificate, SSH key and `clients/<node>/`
 directory; running a script for one node never touches another.
 
 ## Cost
@@ -40,15 +41,26 @@ domain and has no TLS fingerprint of its own. No domain name, no ACME
 certificate and no CDN are required, and active probing of the port sees only
 the impersonated site.
 
+## Why also Hysteria2
+
+Mobile carriers (notably China Mobile 4G/5G) throttle or drop long-lived TCP
+connections to foreign VPS ranges far more aggressively than home broadband
+does, so a pure VLESS-over-TCP node can be fine on Wi-Fi and unreachable on
+cellular. Hysteria2 is QUIC over UDP with its own congestion control; it
+usually stays usable when TCP 443 is being interfered with. It listens on
+443/udp so the traffic looks like HTTP/3 to the same site REALITY impersonates,
+and unauthenticated probes get a reverse proxy of that site. The certificate is
+self-signed (no domain), so clients pin its SHA-256 (`pinSHA256` in the link).
+
 ## Usage
 
 Prerequisites: `terraform`, `aws` CLI with credentials, `openssl`, `curl`,
-`unzip`, `basenc` (coreutils). Optional: `qrencode` for a scannable QR code.
+`unzip`, `jq`, `basenc` (coreutils). Optional: `qrencode` for a scannable QR code.
 
 ```bash
-./scripts/up.sh        # create/update the Tokyo node, print the vless:// share link
-./scripts/verify.sh    # prove traffic really exits through the node
-./scripts/links.sh     # reprint the share link and rewrite clients/<node>/
+./scripts/up.sh        # create/update the Tokyo node, print vless:// and hysteria2:// links
+./scripts/verify.sh    # prove traffic really exits through the node over both tcp and udp
+./scripts/links.sh     # reprint the share links and rewrite clients/<node>/
 ./scripts/rotate-ip.sh # new IPv4 if the current one gets blocked
 ./scripts/ssh.sh       # shell on the node (e.g. journalctl -u xray)
 ./scripts/down.sh      # destroy the node, bill back to zero
@@ -58,16 +70,19 @@ NODE=singapore ./scripts/verify.sh
 NODE=singapore ./scripts/down.sh
 ```
 
-`clients/<node>/` (git-ignored) gets `share-link.txt`, an xray-core client
-config and the SSH private key. Import the share link into v2rayN / Nekoray / sing-box /
-Shadowrocket / Clash.Meta directly.
+`clients/<node>/` (git-ignored) gets `share-links.txt` (vless + hysteria2), an
+xray-core client config, a hysteria client config and the SSH private key.
+Import the share links into v2rayN / Nekoray / sing-box / Shadowrocket /
+Clash.Meta (Clash Verge) directly; add both entries to a `url-test` group so the
+client falls back to UDP when TCP is throttled.
 
 ### State and stable credentials
 
 Terraform state lives in `s3://passw1-tfstate-<account-id>` (created
 automatically in `ap-northeast-1`, override with `TF_STATE_BUCKET` /
 `TF_STATE_REGION`), one object per node: `passw1/<node>.tfstate`. `down.sh` deletes only the
-billed AWS resources and leaves the UUID and REALITY keypair in state, so the
+billed AWS resources and leaves the UUID, REALITY keypair, Hysteria2 password
+and certificate in state, so the
 next `up.sh` — even from a different machine — issues the *same* credentials and
 your previously imported client entry keeps working after a one-line IP edit
 (or just re-import the freshly printed link).
@@ -78,13 +93,16 @@ is why the server never has to report it back.
 
 ## Operational notes
 
-- Only ports 22 (`ssh_allowed_cidrs`, default open — narrow it) and 443 are
-  reachable; Lightsail's default port 80 rule is removed.
+- Only ports 22/tcp (`ssh_allowed_cidrs`, default open — narrow it), 443/tcp
+  and 443/udp are reachable; Lightsail's default port 80 rule is removed.
+- Changing anything in `user-data` (including this Hysteria2 addition) replaces
+  the Lightsail instance: ~3 minutes of downtime per node, same static IP,
+  same credentials.
 - BBR + `fq` and enlarged TCP buffers are applied via cloud-init, which matters
   a lot on lossy China→Japan paths. A 1 GB swapfile protects the 512 MB node.
 - Watch the 1 TB allowance in the Lightsail console; overage is $0.09/GB.
 - If throughput collapses but the port is still open, the IP is likely throttled
   rather than blocked — `rotate-ip.sh` is the fast fix.
-- Sensitive values (`reality_private_key`, `ssh_private_key`) are Terraform
+- Sensitive values (`reality_private_key`, `hysteria_password`, `ssh_private_key`) are Terraform
   outputs marked sensitive and stored in the encrypted state bucket. Anyone with
   the share link has full use of the node; treat it as a password.
