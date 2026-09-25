@@ -12,7 +12,7 @@ terraform -chdir="$TF_DIR" apply -input=false -auto-approve "$@"
 IP="$(tf_out public_ip)"
 PORT="$(tf_out proxy_port)"
 
-echo "waiting for xray on $NODE $IP:$PORT (cloud-init needs ~2 minutes)"
+echo "waiting for xray on $NODE $IP:$PORT (cloud-init needs ~3 minutes; hysteria2 starts right after)"
 for _ in $(seq 1 60); do
   if timeout 5 bash -c "cat </dev/null >/dev/tcp/$IP/$PORT" 2>/dev/null; then
     echo "port $PORT is open"

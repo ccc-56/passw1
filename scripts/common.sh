@@ -87,6 +87,12 @@ tf_out() {
   terraform -chdir="$TF_DIR" output -raw "$1"
 }
 
+# Hysteria2 clients pin the self-signed certificate by its SHA-256 fingerprint
+# (colon-separated hex, as `openssl x509 -fingerprint` prints it).
+hysteria_pin() {
+  tf_out hysteria_cert_pem | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2
+}
+
 # Derives the REALITY public key from the private key (raw 32-byte X25519 scalar
 # in base64url). Xray only ever sees the private half; clients need the public one.
 x25519_public() {
